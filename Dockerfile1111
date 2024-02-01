@@ -1,0 +1,24 @@
+# 使用官方 Python 运行时作为父镜像
+# python:3.9-slim
+FROM vulhub/uwsgi-python:2.0.17
+
+# 设置工作目录为 /app
+WORKDIR /app
+
+# 将当前目录内容复制到位于 /app 的容器中
+COPY . /app
+
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1
+
+RUN chmod +x /app/start.sh
+
+# 设置 pip 源为清华大学镜像
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 安装任何所需的依赖项
+RUN pip install --upgrade pip
+RUN pip install flask requests Pillow flask-cors tiktoken fake_useragent redis
+
+# 在容器启动时运行 Flask 应用
+CMD ["/app/start.sh"]
