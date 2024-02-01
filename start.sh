@@ -31,4 +31,4 @@ echo "PROCESS_WORKERS: ${PROCESS_WORKERS}"
 echo "PROCESS_THREADS: ${PROCESS_THREADS}"
 
 # 启动 Gunicorn 并使用 tee 命令同时输出日志到文件和控制台
-exec gunicorn -w ${PROCESS_WORKERS} --threads ${PROCESS_THREADS} --bind 0.0.0.0:33333 main:app --access-logfile - --error-logfile -
+exec gunicorn -w ${PROCESS_WORKERS} --threads ${PROCESS_THREADS} --bind 0.0.0.0:33333 app:app --access-logfile - --error-logfile -
