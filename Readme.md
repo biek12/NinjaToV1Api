@@ -1,12 +1,11 @@
 ## 项目简介
 
-> [!IMPORTANT]
->
-> 鉴于Zhile大佬的Pandora项目停更，本项目也将暂时暂停更新，感谢大家对项目的支持，后续如有优秀的代理项目出现，也许会考虑回坑。
->
-> Respect Zhile大佬！
+> 本项目由于【[PandoraNext](https://github.com/pandora-next/deploy)】的停更，Ink-Osier老哥的【[PandoraToV1Api](https://github.com/Ink-Osier/PandoraToV1Api)】也跟随停更，
+> 所以我在想自己 Fork 一下基于Ninja项目来接着更新，测试后本项目功能完整能用，后续填坑文档
+> 
+> 本项目优化思考：Ninja是通过accesskey完成接口调用的，所以我增加了通过账号自动拉取accesskey
 
-为了方便大家将 [Pandora-Next](https://github.com/pandora-next/deploy) 项目与各种其他项目结合完成了本项目。
+为了方便大家将 [Ninja](https://github.com/gngpp/ninja) 项目与各种其他项目结合完成了本项目。
 
 本项目支持：
 
@@ -55,6 +54,8 @@
 - [x] 支持 指定进程、线程数
 
 - [x] 支持文件生成
+
+- [x] 支持通过账号登录
 
 ## 注意
 

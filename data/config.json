@@ -30,5 +30,9 @@
         "db": 0,
         "pool_size": 10,
         "pool_timeout": 60000
+    },
+    "account": {
+        "username": "",
+        "password": ""
     }
 }
