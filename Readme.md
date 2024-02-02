@@ -1,9 +1,11 @@
 ## 项目简介
 
-> 本项目由于【[PandoraNext](https://github.com/pandora-next/deploy)】的停更，Ink-Osier老哥的【[PandoraToV1Api](https://github.com/Ink-Osier/PandoraToV1Api)】也跟随停更，
-> 所以我在想自己 Fork 一下基于Ninja项目来接着更新，测试后本项目功能完整能用，后续填坑文档
+> 项目刚开始就被openai干死了，openai目前通过wss返回的数据是加密的，暂时还未得到解决方案，后续填坑吧
 > 
-> 本项目优化思考：Ninja是通过accesskey完成接口调用的，所以我增加了通过账号自动拉取accesskey
+> ~~本项目由于【[PandoraNext](https://github.com/pandora-next/deploy)】的停更，Ink-Osier老哥的【[PandoraToV1Api](https://github.com/Ink-Osier/PandoraToV1Api)】也跟随停更，~~
+> ~~所以我在想自己 Fork 一下基于Ninja项目来接着更新，测试后本项目功能完整能用，后续填坑文档~~
+> 
+> ~~本项目优化思考：Ninja是通过accesskey完成接口调用的，所以我增加了通过账号自动拉取accesskey~~
 
 为了方便大家将 [Ninja](https://github.com/gngpp/ninja) 项目与各种其他项目结合完成了本项目。
 
