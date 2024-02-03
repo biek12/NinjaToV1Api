@@ -396,14 +396,14 @@ def data_fetcher(data_queue, stop_event, last_data_time, api_key, chat_message_i
     execution_output_image_url_buffer = ""
     execution_output_image_id_buffer = ""
 
-    # wss_url = register_websocket(api_key)
+    wss_url = register_websocket(api_key)
     # response_json = upstream_response.json()
     # wss_url = response_json.get("wss_url", None)
     # logger.info(f"wss_url: {wss_url}")
 
     # 如果存在 wss_url，使用 WebSocket 连接获取数据
 
-    process_wss("", data_queue, stop_event, last_data_time, api_key, chat_message_id, model, response_format,
+    process_wss(wss_url, data_queue, stop_event, last_data_time, api_key, chat_message_id, model, response_format,
                 messages)
 
     while True:
@@ -1092,14 +1092,12 @@ def process_data_json(data_json, data_queue, stop_event, last_data_time, api_key
     return all_new_text, first_output, last_full_text, last_full_code, last_full_code_result, last_content_type, conversation_id, citation_buffer, citation_accumulating, file_output_buffer, file_output_accumulating, execution_output_image_url_buffer, execution_output_image_id_buffer, None
 
 
-def process_wss(wss_url, data_queue=None, stop_event=None, last_data_time=None, api_key=None,
-                chat_message_id=None, model=None, response_format=None, messages=None):
+def process_wss(wss_url, data_queue, stop_event, last_data_time, api_key, chat_message_id, model, response_format, messages):
     headers = {
         "Sec-Ch-Ua-Mobile": "?0",
         "User-Agent": ua.random
     }
     context = {
-        "sequenceId": 1,
         "all_new_text": "",
         "first_output": True,
         "timestamp": int(time.time()),
@@ -1114,7 +1112,12 @@ def process_wss(wss_url, data_queue=None, stop_event=None, last_data_time=None, 
         "file_output_buffer": "",
         "file_output_accumulating": False,
         "execution_output_image_url_buffer": "",
-        "execution_output_image_id_buffer": ""
+        "execution_output_image_id_buffer": "",
+        "is_sse": False,
+        "upstream_response": None,
+        "messages": messages,
+        "api_key": api_key,
+        "model": model
     }
 
     def on_message(ws, message):
@@ -1124,7 +1127,6 @@ def process_wss(wss_url, data_queue=None, stop_event=None, last_data_time=None, 
             ws.close()
             return
         result_json = json.loads(message)
-        # print(result_json)
         result_id = result_json.get('response_id', '')
         # print("context: " + str(context["response_id"]))
         # print("result_id: " + str(result_id))
@@ -1142,31 +1144,7 @@ def process_wss(wss_url, data_queue=None, stop_event=None, last_data_time=None, 
                 data_json = json.loads(complete_data.replace('data: ', ''))
                 logger.debug(f"data_json: {data_json}")
 
-                context["all_new_text"], context["first_output"], context["last_full_text"], context["last_full_code"], \
-                    context["last_full_code_result"], context["last_content_type"], context["conversation_id"], context[
-                    "citation_buffer"], context["citation_accumulating"], context["file_output_buffer"], context[
-                    "file_output_accumulating"], context["execution_output_image_url_buffer"], context[
-                    "execution_output_image_id_buffer"], allow_id = process_data_json(data_json, data_queue, stop_event,
-                                                                                      last_data_time, api_key,
-                                                                                      chat_message_id, model,
-                                                                                      response_format,
-                                                                                      context["timestamp"],
-                                                                                      context["first_output"],
-                                                                                      context["last_full_text"],
-                                                                                      context["last_full_code"],
-                                                                                      context["last_full_code_result"],
-                                                                                      context["last_content_type"],
-                                                                                      context["conversation_id"],
-                                                                                      context["citation_buffer"],
-                                                                                      context["citation_accumulating"],
-                                                                                      context["file_output_buffer"],
-                                                                                      context[
-                                                                                          "file_output_accumulating"],
-                                                                                      context[
-                                                                                          "execution_output_image_url_buffer"],
-                                                                                      context[
-                                                                                          "execution_output_image_id_buffer"],
-                                                                                      context["all_new_text"])
+                context["all_new_text"], context["first_output"], context["last_full_text"], context["last_full_code"], context["last_full_code_result"], context["last_content_type"], context["conversation_id"], context["citation_buffer"], context["citation_accumulating"], context["file_output_buffer"], context["file_output_accumulating"], context["execution_output_image_url_buffer"], context["execution_output_image_id_buffer"], allow_id = process_data_json(data_json, data_queue, stop_event, last_data_time, api_key, chat_message_id, model, response_format, context["timestamp"], context["first_output"], context["last_full_text"], context["last_full_code"], context["last_full_code_result"], context["last_content_type"], context["conversation_id"], context["citation_buffer"], context["citation_accumulating"], context["file_output_buffer"], context["file_output_accumulating"], context["execution_output_image_url_buffer"], context["execution_output_image_id_buffer"], context["all_new_text"])
 
                 if allow_id:
                     context["response_id"] = allow_id
@@ -1183,56 +1161,28 @@ def process_wss(wss_url, data_queue=None, stop_event=None, last_data_time=None, 
                     ws.close()
 
     def on_error(ws, error):
-        print(error)
         logger.error(error)
 
     def on_close(ws, b, c):
-        init.wss_connect = None
         logger.debug("wss closed")
 
     def on_open(ws):
-        start_time = int(time.time())
-        def run(*args):
-            logger.debug(f"on_open: wss")
-            while True:
-                now_time = int(time.time())
-                # if now_time - start_time == 1:
-                #     ws.send(json.dumps({
-                #         "sequenceId": 2,
-                #         "type": "sequenceAck"
-                #     }))
-
-                # logger.debug(f"on_open: while")
-                #
-                # 如果过了很久还是没有返回值，直接拉闸
-                last_full_text = str(context["last_full_text"])
-                if now_time - start_time > 3 and (last_full_text is None or last_full_text.strip() == '') :
-                    logger.info(f"会话结束")
-                    q_data = ""
-                    data_queue.put(('all_new_text', context["all_new_text"]))
-                    data_queue.put(q_data)
-                    stop_event.set()
-
-                if stop_event.is_set():
-                    ws.close()
-                    break
-                time.sleep(1)
-        # run()
-
-    if model:
-        upstream_response = send_text_prompt_and_get_response(messages, api_key, True, model)
-        logger.info(f"upstream_response: {upstream_response.json()}")
+        logger.debug(f"on_open: wss")
+        upstream_response = send_text_prompt_and_get_response(context["messages"], context["api_key"], True, context["model"])
+        # upstream_wss_url = None
         # 检查 Content-Type 是否为 SSE 响应
         content_type = upstream_response.headers.get('Content-Type')
+        logger.debug(f"Content-Type: {content_type}")
         # 判断content_type是否包含'text/event-stream'
         if content_type and 'text/event-stream' in content_type:
             logger.debug("上游响应为 SSE 响应")
-            old_data_fetcher(upstream_response, data_queue, stop_event, last_data_time, api_key, chat_message_id, model,
-                             response_format)
+            context["is_sse"] = True
+            context["upstream_response"] = upstream_response
+            ws.close()
+            return
         else:
             if upstream_response.status_code != 200:
-                logger.error(
-                    f"upstream_response status code: {upstream_response.status_code}, upstream_response: {upstream_response.text}")
+                logger.error(f"upstream_response status code: {upstream_response.status_code}, upstream_response: {upstream_response.text}")
                 complete_data = 'data: [DONE]\n\n'
                 timestamp = context["timestamp"]
 
@@ -1258,36 +1208,50 @@ def process_wss(wss_url, data_queue=None, stop_event=None, last_data_time=None, 
                 data_queue.put(('all_new_text', "```json\n{\n\"error\": \"Upstream error...\"\n}\n```"))
                 data_queue.put(q_data)
                 stop_event.set()
-                return
+                ws.close()
             try:
                 upstream_response_json = upstream_response.json()
-                wss_url = upstream_response_json.get("wss_url", None)
+                logger.debug(f"upstream_response_json: {upstream_response_json}")
+                # upstream_wss_url = upstream_response_json.get("wss_url", None)
                 upstream_response_id = upstream_response_json.get("response_id", None)
                 context["response_id"] = upstream_response_id
             except json.JSONDecodeError:
                 pass
+        def run(*args):
+            while True:
+                if stop_event.is_set():
+                    logger.debug(f"接受到停止信号，停止 Websocket")
+                    ws.close()
+                    break
 
-        if wss_url is not None :
-            logger.debug(f"start wss...")
-            wss_connect = websocket.WebSocketApp(wss_url,
-                                                 on_open=on_open,
-                                                 on_message=on_message,
-                                                 on_error=on_error,
-                                                 on_close=on_close)
+    logger.debug(f"start wss...")
 
-            if config.PROXY_CONFIG_ENABLED:
-                logger.debug(f"start wss enabled proxy...")
+    logger.debug(f"start wss...")
+    wss_connect = websocket.WebSocketApp(wss_url,
+                                         on_open=on_open,
+                                         on_message=on_message,
+                                         on_error=on_error,
+                                         on_close=on_close)
 
-                wss_connect.run_forever(http_proxy_host=config.PROXY_CONFIG_HOST,
-                                        http_proxy_port=config.PROXY_CONFIG_PORT,
-                                        proxy_type=config.PROXY_CONFIG_PROTOCOL,
-                                        http_proxy_auth=config.PROXY_CONFIG_AUTH
-                                        )
+    if config.PROXY_CONFIG_ENABLED:
+        logger.debug(f"start wss enabled proxy...")
 
-            else:
-                wss_connect.run_forever()
+        wss_connect.run_forever(http_proxy_host=config.PROXY_CONFIG_HOST,
+                                http_proxy_port=config.PROXY_CONFIG_PORT,
+                                proxy_type=config.PROXY_CONFIG_PROTOCOL,
+                                http_proxy_auth=config.PROXY_CONFIG_AUTH
+                                )
 
-            logger.debug(f"end wss...")
+    else:
+        wss_connect.run_forever()
+
+    wss_connect.on_open = on_open
+    wss_connect.run_forever()
+
+    logger.debug(f"end wss...")
+    if context["is_sse"] == True:
+        logger.debug(f"process sse...")
+        old_data_fetcher(context["upstream_response"], data_queue, stop_event, last_data_time, api_key, chat_message_id, model, response_format)
 
 
 def register_websocket(api_key):
