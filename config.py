@@ -56,6 +56,18 @@ ACCOUNT_CONFIG = CONFIG.get('account', {})
 ACCOUNT_CONFIG_USERNAME = ACCOUNT_CONFIG.get('username', '')
 ACCOUNT_CONFIG_PASSWORD = ACCOUNT_CONFIG.get('password', '')
 
+# proxy配置（主要是代理wss）
+PROXY_CONFIG = CONFIG.get('proxy', {})
+PROXY_CONFIG_ENABLED = PROXY_CONFIG.get('enabled', 'false') == 'true'
+PROXY_CONFIG_HOST = PROXY_CONFIG.get('host', '')
+PROXY_CONFIG_PORT = PROXY_CONFIG.get('port', 7890)
+PROXY_CONFIG_PROTOCOL = PROXY_CONFIG.get('protocol', '')
+PROXY_CONFIG_USERNAME = PROXY_CONFIG.get('username', '')
+PROXY_CONFIG_PASSWORD = PROXY_CONFIG.get('password', '')
+PROXY_CONFIG_AUTH = [
+    PROXY_CONFIG_USERNAME,
+    PROXY_CONFIG_PASSWORD
+]
 
 
 """

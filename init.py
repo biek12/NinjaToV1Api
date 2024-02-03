@@ -21,3 +21,6 @@ app = Flask(__name__)
 CORS(app, resources={r"/images/*": {"origins": "*"}})
 
 gpts_configurations = []
+
+# websocket连接
+wss_connect = None
