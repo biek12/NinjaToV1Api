@@ -12,13 +12,13 @@ ENV PYTHONUNBUFFERED=1
 
 RUN chmod +x /app/start.sh
 
-# RUN apt update && apt install -y jq
+RUN apt update && apt install -y jq
 
 # 设置 pip 源为清华大学镜像
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 安装任何所需的依赖项
-RUN pip install --no-cache-dir flask gunicorn requests Pillow flask-cors tiktoken fake_useragent redis
+RUN pip install --no-cache-dir flask gunicorn requests Pillow flask-cors tiktoken fake_useragent redis websocket-client
 
 # 在容器启动时运行 Flask 应用
 CMD ["/app/start.sh"]
