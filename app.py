@@ -8,24 +8,22 @@ import time
 from queue import Queue
 
 import requests
-import websocket
 from flask import request, jsonify, Response, send_from_directory
 from flask_cors import cross_origin
 
 import config
-import gpt
 import init
-from auth import get_access_key, get_access_key_default
+from auth import get_access_key
 from gpt import send_text_prompt_and_get_response, data_fetcher, keep_alive, count_tokens, count_total_input_words, \
-    save_image, replace_complete_citation, register_websocket
+    save_image, replace_complete_citation
 from init import app, logger
 from modules import models
 from modules.models import get_accessible_model_list, find_model_config
 from modules.utils import generate_unique_id, is_valid_citation_format, is_complete_citation_format
 
-VERSION = '0.7.0'
+VERSION = '0.6.0'
 # VERSION = 'test'
-UPDATE_INFO = '适配WSS输出'
+UPDATE_INFO = '去除PandoraNext相关服务依赖选项，并修改部分配置名，Respect Pandora！'
 # UPDATE_INFO = '【仅供临时测试使用】 '
 
 with app.app_context():
@@ -102,17 +100,6 @@ with app.app_context():
 
     logger.info(f"==========================================")
 
-    # 处理 websocket 连接
-    # data_queue = Queue()
-    # stop_event = threading.Event()
-    # last_data_time = [time.time()]
-
-    # api_key = get_access_key_default()
-    # wss_url = register_websocket(api_key)
-    # gpt.process_wss(wss_url=wss_url, data_queue=data_queue, stop_event=stop_event, last_data_time=last_data_time)
-
-    logger.info(f"==========================================")
-
     # 更新 gpts_configurations 列表，支持多个映射
     for name in config.GPT_4_S_New_Names:
         init.gpts_configurations.append({
@@ -131,7 +118,6 @@ with app.app_context():
         })
 
     logger.info(f"GPTS 配置信息")
-
 
     # 加载配置并添加到全局列表
     models.add_config_to_global_list(config.BASE_URL, config.PROXY_API_PREFIX, config.GPTs_DATA, config.KEY_FOR_GPTS_INFO)
@@ -170,13 +156,8 @@ def chat_completions():
         return jsonify({"error": "Authorization header is missing or invalid"}), 401
     api_key = auth_header.split(' ')[1]
     logger.info(f"api_key: {api_key}")
-    # 将api_key转换为access_key
-    api_key = get_access_key(key=api_key)
-    if not api_key:
-        logger.info(f"api_key: {api_key} -> 无法获取到access key")
-        return jsonify({"error": "Authorization header is missing or invalid"}), 401
 
-    # upstream_response = send_text_prompt_and_get_response(messages, api_key, stream, model)
+    upstream_response = send_text_prompt_and_get_response(messages, api_key, stream, model)
 
     # 在非流式响应的情况下，我们需要一个变量来累积所有的 new_text
     all_new_text = ""
@@ -195,7 +176,7 @@ def chat_completions():
 
         # 启动数据处理线程
         fetcher_thread = threading.Thread(target=data_fetcher, args=(
-        data_queue, stop_event, last_data_time, api_key, chat_message_id, model, "url", messages))
+        upstream_response, data_queue, stop_event, last_data_time, api_key, chat_message_id, model))
         fetcher_thread.start()
 
         # 启动保活线程
@@ -319,11 +300,6 @@ def images_generations():
         return jsonify({"error": "Authorization header is missing or invalid"}), 401
     api_key = auth_header.split(' ')[1]
     logger.info(f"api_key: {api_key}")
-    # 将api_key转换为access_key
-    api_key = get_access_key(key=api_key)
-    if not api_key:
-        logger.info(f"api_key: {api_key} -> 无法获取到access key")
-        return jsonify({"error": "Authorization header is missing or invalid"}), 401
 
     image_urls = []
 
@@ -335,7 +311,7 @@ def images_generations():
         }
     ]
 
-    # upstream_response = send_text_prompt_and_get_response(messages, api_key, False, model)
+    upstream_response = send_text_prompt_and_get_response(messages, api_key, False, model)
 
     # 在非流式响应的情况下，我们需要一个变量来累积所有的 new_text
     all_new_text = ""
@@ -343,60 +319,328 @@ def images_generations():
     # 处理流式响应
     def generate():
         nonlocal all_new_text  # 引用外部变量
-        data_queue = Queue()
-        stop_event = threading.Event()
-        last_data_time = [time.time()]
         chat_message_id = generate_unique_id("chatcmpl")
+        # 当前时间戳
+        timestamp = int(time.time())
 
-        conversation_id_print_tag = False
-
+        buffer = ""
+        last_full_text = ""  # 用于存储之前所有出现过的 parts 组成的完整文本
+        last_full_code = ""
+        last_full_code_result = ""
+        last_content_type = None  # 用于记录上一个消息的内容类型
         conversation_id = ''
+        citation_buffer = ""
+        citation_accumulating = False
+        for chunk in upstream_response.iter_content(chunk_size=1024):
+            if chunk:
+                buffer += chunk.decode('utf-8')
+                # 检查是否存在 "event: ping"，如果存在，则只保留 "data:" 后面的内容
+                if "event: ping" in buffer:
+                    if "data:" in buffer:
+                        buffer = buffer.split("data:", 1)[1]
+                        buffer = "data:" + buffer
+                # 使用正则表达式移除特定格式的字符串
+                # print("应用正则表达式之前的 buffer:", buffer.replace('\n', '\\n'))
+                buffer = re.sub(r'data: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}(\r\n|\r|\n){2}', '', buffer)
+                # print("应用正则表达式之后的 buffer:", buffer.replace('\n', '\\n'))
 
-        # 启动数据处理线程
-        fetcher_thread = threading.Thread(target=data_fetcher, args=(
-        data_queue, stop_event, last_data_time, api_key, chat_message_id, model, response_format, messages))
-        fetcher_thread.start()
+                while 'data:' in buffer and '\n\n' in buffer:
+                    end_index = buffer.index('\n\n') + 2
+                    complete_data, buffer = buffer[:end_index], buffer[end_index:]
+                    # 解析 data 块
+                    try:
+                        data_json = json.loads(complete_data.replace('data: ', ''))
+                        # print(f"data_json: {data_json}")
+                        message = data_json.get("message", {})
 
-        # 启动保活线程
-        keep_alive_thread = threading.Thread(target=keep_alive,
-                                             args=(last_data_time, stop_event, data_queue, model, chat_message_id))
-        keep_alive_thread.start()
+                        if message == None:
+                            logger.error(f"message 为空: data_json: {data_json}")
 
-        try:
-            while True:
-                data = data_queue.get()
-                if isinstance(data, tuple) and data[0] == 'all_new_text':
-                    # 更新 all_new_text
-                    logger.info(f"完整消息: {data[1]}")
-                    all_new_text += data[1]
-                elif isinstance(data, tuple) and data[0] == 'conversation_id':
-                    if conversation_id_print_tag == False:
-                        logger.info(f"当前会话id: {data[1]}")
-                        conversation_id_print_tag = True
-                    # 更新 conversation_id
-                    conversation_id = data[1]
-                    # print(f"收到会话id: {conversation_id}")
-                elif isinstance(data, tuple) and data[0] == 'image_url':
-                    # 更新 image_url
-                    image_urls.append(data[1])
-                    logger.debug(f"收到图片链接: {data[1]}")
-                elif data == 'data: [DONE]\n\n':
-                    # 接收到结束信号，退出循环
-                    logger.debug(f"会话结束-外层")
-                    yield data
-                    break
-                else:
-                    yield data
+                        message_status = message.get("status")
+                        content = message.get("content", {})
+                        role = message.get("author", {}).get("role")
+                        content_type = content.get("content_type")
+                        # logger.debug(f"content_type: {content_type}")
+                        # logger.debug(f"last_content_type: {last_content_type}")
 
-        finally:
-            logger.critical(f"准备结束会话")
-            stop_event.set()
-            fetcher_thread.join()
-            keep_alive_thread.join()
+                        metadata = {}
+                        citations = []
+                        try:
+                            metadata = message.get("metadata", {})
+                            citations = metadata.get("citations", [])
+                        except:
+                            pass
+                        name = message.get("author", {}).get("name")
+                        if (
+                                role == "user" or message_status == "finished_successfully" or role == "system") and role != "tool":
+                            # 如果是用户发来的消息，直接舍弃
+                            continue
+                        try:
+                            conversation_id = data_json.get("conversation_id")
+                            logger.debug(f"conversation_id: {conversation_id}")
+                        except:
+                            pass
+                            # 只获取新的部分
+                        new_text = ""
+                        is_img_message = False
+                        parts = content.get("parts", [])
+                        for part in parts:
+                            try:
+                                # print(f"part: {part}")
+                                # print(f"part type: {part.get('content_type')}")
+                                if part.get('content_type') == 'image_asset_pointer':
+                                    logger.debug(f"find img message~")
+                                    is_img_message = True
+                                    asset_pointer = part.get('asset_pointer').replace('file-service://', '')
+                                    logger.debug(f"asset_pointer: {asset_pointer}")
+                                    image_url = f"{config.BASE_URL}{config.PROXY_API_PREFIX}/backend-api/files/{asset_pointer}/download"
 
-            # if conversation_id:
-            #     # print(f"准备删除的会话id： {conversation_id}")
-            #     delete_conversation(conversation_id, cookie, x_authorization)
+                                    ak = get_access_key(api_key)
+                                    if not ak or ak == '':
+                                        return jsonify({"error": "Authorization header is missing or invalid"}), 401
+
+                                    headers = {
+                                        "Authorization": f"Bearer {ak}"
+                                    }
+                                    image_response = requests.get(image_url, headers=headers)
+
+                                    if image_response.status_code == 200:
+                                        download_url = image_response.json().get('download_url')
+                                        logger.debug(f"download_url: {download_url}")
+                                        if config.USE_OAIUSERCONTENT_URL == True and response_format == "url":
+                                            image_link = f"{download_url}"
+                                            image_urls.append(image_link)  # 将图片链接保存到列表中
+                                            new_text = ""
+                                        else:
+                                            if response_format == "url":
+                                                # 从URL下载图片
+                                                # image_data = requests.get(download_url).content
+                                                image_download_response = requests.get(download_url)
+                                                # print(f"image_download_response: {image_download_response.text}")
+                                                if image_download_response.status_code == 200:
+                                                    logger.debug(f"下载图片成功")
+                                                    image_data = image_download_response.content
+                                                    today_image_url = save_image(image_data)  # 保存图片，并获取文件名
+                                                    # new_text = f"\n![image]({UPLOAD_BASE_URL}/{today_image_url})\n[下载链接]({UPLOAD_BASE_URL}/{today_image_url})\n"
+                                                    image_link = f"{config.UPLOAD_BASE_URL}/{today_image_url}"
+                                                    image_urls.append(image_link)  # 将图片链接保存到列表中
+                                                    new_text = ""
+                                                else:
+                                                    logger.error(f"下载图片失败: {image_download_response.text}")
+                                            else:
+                                                # 使用base64编码图片
+                                                # image_data = requests.get(download_url).content
+                                                image_download_response = requests.get(download_url)
+                                                if image_download_response.status_code == 200:
+                                                    logger.debug(f"下载图片成功")
+                                                    image_data = image_download_response.content
+                                                    image_base64 = base64.b64encode(image_data).decode('utf-8')
+                                                    image_urls.append(image_base64)
+                                                    new_text = ""
+                                                else:
+                                                    logger.error(f"下载图片失败: {image_download_response.text}")
+                                        if last_content_type == "code":
+                                            new_text = new_text
+                                            # new_text = "\n```\n" + new_text
+                                        logger.debug(f"new_text: {new_text}")
+                                        is_img_message = True
+                                    else:
+                                        logger.error(f"获取图片下载链接失败: {image_response.text}")
+                            except:
+                                pass
+
+                        if is_img_message == False:
+                            # print(f"data_json: {data_json}")
+                            if content_type == "multimodal_text" and last_content_type == "code":
+                                new_text = "\n```\n" + content.get("text", "")
+                            elif role == "tool" and name == "dalle.text2im":
+                                logger.debug(f"无视消息: {content.get('text', '')}")
+                                continue
+                            # 代码块特殊处理
+                            if content_type == "code" and last_content_type != "code" and content_type != None:
+                                full_code = ''.join(content.get("text", ""))
+                                new_text = "\n```\n" + full_code[len(last_full_code):]
+                                # print(f"full_code: {full_code}")
+                                # print(f"last_full_code: {last_full_code}")
+                                # print(f"new_text: {new_text}")
+                                last_full_code = full_code  # 更新完整代码以备下次比较
+
+                            elif last_content_type == "code" and content_type != "code" and content_type != None:
+                                full_code = ''.join(content.get("text", ""))
+                                new_text = "\n```\n" + full_code[len(last_full_code):]
+                                # print(f"full_code: {full_code}")
+                                # print(f"last_full_code: {last_full_code}")
+                                # print(f"new_text: {new_text}")
+                                last_full_code = ""  # 更新完整代码以备下次比较
+
+                            elif content_type == "code" and last_content_type == "code" and content_type != None:
+                                full_code = ''.join(content.get("text", ""))
+                                new_text = full_code[len(last_full_code):]
+                                # print(f"full_code: {full_code}")
+                                # print(f"last_full_code: {last_full_code}")
+                                # print(f"new_text: {new_text}")
+                                last_full_code = full_code  # 更新完整代码以备下次比较
+
+                            else:
+                                # 只获取新的 parts
+                                parts = content.get("parts", [])
+                                full_text = ''.join(parts)
+                                new_text = full_text[len(last_full_text):]
+                                last_full_text = full_text  # 更新完整文本以备下次比较
+                                if "\u3010" in new_text and not citation_accumulating:
+                                    citation_accumulating = True
+                                    citation_buffer = citation_buffer + new_text
+                                    logger.debug(f"开始积累引用: {citation_buffer}")
+                                elif citation_accumulating:
+                                    citation_buffer += new_text
+                                    logger.debug(f"积累引用: {citation_buffer}")
+                                if citation_accumulating:
+                                    if is_valid_citation_format(citation_buffer):
+                                        logger.debug(f"合法格式: {citation_buffer}")
+                                        # 继续积累
+                                        if is_complete_citation_format(citation_buffer):
+
+                                            # 替换完整的引用格式
+                                            replaced_text, remaining_text, is_potential_citation = replace_complete_citation(
+                                                citation_buffer, citations)
+                                            # print(replaced_text)  # 输出替换后的文本
+                                            new_text = replaced_text
+
+                                            if (is_potential_citation):
+                                                citation_buffer = remaining_text
+                                            else:
+                                                citation_accumulating = False
+                                                citation_buffer = ""
+                                            logger.debug(f"替换完整的引用格式: {new_text}")
+                                        else:
+                                            continue
+                                    else:
+                                        # 不是合法格式，放弃积累并响应
+                                        logger.debug(f"不合法格式: {citation_buffer}")
+                                        new_text = citation_buffer
+                                        citation_accumulating = False
+                                        citation_buffer = ""
+
+                            # Python 工具执行输出特殊处理
+                            if role == "tool" and name == "python" and last_content_type != "execution_output" and content_type != None:
+
+                                full_code_result = ''.join(content.get("text", ""))
+                                new_text = "`Result:` \n```\n" + full_code_result[len(last_full_code_result):]
+                                if last_content_type == "code":
+                                    new_text = "\n```\n" + new_text
+                                # print(f"full_code_result: {full_code_result}")
+                                # print(f"last_full_code_result: {last_full_code_result}")
+                                # print(f"new_text: {new_text}")
+                                last_full_code_result = full_code_result  # 更新完整代码以备下次比较
+                            elif last_content_type == "execution_output" and (
+                                    role != "tool" or name != "python") and content_type != None:
+                                # new_text = content.get("text", "") + "\n```"
+                                full_code_result = ''.join(content.get("text", ""))
+                                new_text = full_code_result[len(last_full_code_result):] + "\n```\n"
+                                if content_type == "code":
+                                    new_text = new_text + "\n```\n"
+                                # print(f"full_code_result: {full_code_result}")
+                                # print(f"last_full_code_result: {last_full_code_result}")
+                                # print(f"new_text: {new_text}")
+                                last_full_code_result = ""  # 更新完整代码以备下次比较
+                            elif last_content_type == "execution_output" and role == "tool" and name == "python" and content_type != None:
+                                full_code_result = ''.join(content.get("text", ""))
+                                new_text = full_code_result[len(last_full_code_result):]
+                                # print(f"full_code_result: {full_code_result}")
+                                # print(f"last_full_code_result: {last_full_code_result}")
+                                # print(f"new_text: {new_text}")
+                                last_full_code_result = full_code_result
+
+                        # print(f"收到数据: {data_json}")
+                        # print(f"收到的完整文本: {full_text}")
+                        # print(f"上次收到的完整文本: {last_full_text}")
+                        # print(f"新的文本: {new_text}")
+
+                        # 更新 last_content_type
+                        if content_type != None:
+                            last_content_type = content_type if role != "user" else last_content_type
+
+                        new_data = {
+                            "id": chat_message_id,
+                            "object": "chat.completion.chunk",
+                            "created": timestamp,
+                            "model": message.get("metadata", {}).get("model_slug"),
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {
+                                        "content": ''.join(new_text)
+                                    },
+                                    "finish_reason": None
+                                }
+                            ]
+                        }
+                        # print(f"Role: {role}")
+                        logger.info(f"发送消息: {new_text}")
+                        tmp = 'data: ' + json.dumps(new_data, ensure_ascii=False) + '\n\n'
+                        # print(f"发送数据: {tmp}")
+                        # 累积 new_text
+                        all_new_text += new_text
+                        yield 'data: ' + json.dumps(new_data, ensure_ascii=False) + '\n\n'
+                    except json.JSONDecodeError:
+                        # print("JSON 解析错误")
+                        logger.info(f"发送数据: {complete_data}")
+                        if complete_data == 'data: [DONE]\n\n':
+                            logger.info(f"会话结束")
+                            yield complete_data
+        if citation_buffer != "":
+            new_data = {
+                "id": chat_message_id,
+                "object": "chat.completion.chunk",
+                "created": timestamp,
+                "model": message.get("metadata", {}).get("model_slug"),
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "content": ''.join(citation_buffer)
+                        },
+                        "finish_reason": None
+                    }
+                ]
+            }
+            tmp = 'data: ' + json.dumps(new_data) + '\n\n'
+            # print(f"发送数据: {tmp}")
+            # 累积 new_text
+            all_new_text += citation_buffer
+            yield 'data: ' + json.dumps(new_data) + '\n\n'
+        if buffer:
+            # print(f"最后的数据: {buffer}")
+            # delete_conversation(conversation_id, api_key)
+            try:
+                buffer_json = json.loads(buffer)
+                error_message = buffer_json.get("detail", {}).get("message", "未知错误")
+                error_data = {
+                    "id": chat_message_id,
+                    "object": "chat.completion.chunk",
+                    "created": timestamp,
+                    "model": "error",
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "content": ''.join("```\n" + error_message + "\n```")
+                            },
+                            "finish_reason": None
+                        }
+                    ]
+                }
+                tmp = 'data: ' + json.dumps(error_data) + '\n\n'
+                logger.info(f"发送最后的数据: {tmp}")
+                # 累积 new_text
+                all_new_text += ''.join("```\n" + error_message + "\n```")
+                yield 'data: ' + json.dumps(error_data) + '\n\n'
+            except:
+                # print("JSON 解析错误")
+                logger.info(f"发送最后的数据: {buffer}")
+                yield buffer
+
+        # delete_conversation(conversation_id, api_key)
 
     # 执行流式响应的生成函数来累积 all_new_text
     # 迭代生成器对象以执行其内部逻辑
@@ -411,7 +655,7 @@ def images_generations():
                 "message": all_new_text,  # 使用累积的文本作为错误信息
                 "type": "invalid_request_error",
                 "param": "",
-                "code": "image_generate_fail"
+                "code": "content_policy_violation"
             }
         }
     else:
@@ -437,7 +681,7 @@ def images_generations():
                     } for base64 in image_urls
                 ]  # 将图片链接列表转换为所需格式
             }
-    # logger.critical(f"response_json: {response_json}")
+    logger.debug(f"response_json: {response_json}")
 
     # 返回 JSON 响应
     return jsonify(response_json)
@@ -489,4 +733,4 @@ def get_file(filename):
 
 # 运行 Flask 应用
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=33333)
+    app.run(host='0.0.0.0')

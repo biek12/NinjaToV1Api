@@ -1,10 +1,11 @@
 ## 项目简介
 
-> 本项目由于【[PandoraNext](https://github.com/pandora-next/deploy)】的停更，Ink-Osier老哥的【[PandoraToV1Api](https://github.com/Ink-Osier/PandoraToV1Api)】也跟随停更
+> 项目刚开始就被openai干死了，openai目前通过wss返回的数据是加密的，暂时还未得到解决方案，后续填坑吧
 > 
-> 所以我在想自己 Fork 一下基于Ninja项目来接着更新，测试后本项目功能完整能用，后续填坑文档
+> ~~本项目由于【[PandoraNext](https://github.com/pandora-next/deploy)】的停更，Ink-Osier老哥的【[PandoraToV1Api](https://github.com/Ink-Osier/PandoraToV1Api)】也跟随停更，~~
+> ~~所以我在想自己 Fork 一下基于Ninja项目来接着更新，测试后本项目功能完整能用，后续填坑文档~~
 > 
-> 本项目优化思考：Ninja是通过accesskey完成接口调用的，所以我增加了通过账号自动拉取accesskey
+> ~~本项目优化思考：Ninja是通过accesskey完成接口调用的，所以我增加了通过账号自动拉取accesskey~~
 
 为了方便大家将 [Ninja](https://github.com/gngpp/ninja) 项目与各种其他项目结合完成了本项目。
 
@@ -57,8 +58,6 @@
 - [x] 支持文件生成
 
 - [x] 支持通过账号登录
-
-- [x] 支持Websocket消息及websocket代理
 
 ## 注意
 
@@ -152,26 +151,6 @@ PS. 注意，arkose_urls中的地址需要支持PandoraNext的Arkose Token获取
     - `password`: Redis的密码，默认为空，如果你的Redis服务设置了密码，请将其设置为你的密码
 
     - `db`: Redis的数据库，默认：0，如有特殊需求，你可以将此值设置为其他数据库
-  
-- `proxy`
-
-    - `enabled`: 用于设置是否开启 代理 模式，可选值为：`true`、`false`，默认为 `false`
-
-    - `host`: 你的代理服务器的地址，例如：192.168.1.120
-  
-    - `port`: 你的代理服务器的端口，默认：7890，如有特殊需求，你可以将此值设置为其他端口
-  
-    - `protocol`: 代理协议，可选值为：`http`、`socks4`、`socks4a`、`socks5`、`socks5h`，默认为 `socks5`
-
-    - `proxy_auth_username`: 代理服务器的账号，默认为空，如果你的代理服务设置了账号，请将其设置为你的账号
-
-    - `proxy_auth_password`: 代理服务器的密码，默认为空，如果你的代理服务设置了密码，请将其设置为你的密码
-  
-- `account`
-
-    - `username`: 你的某ai账号
-
-    - `password`: 你的某ai密码
 
 ## GPTS配置说明
 

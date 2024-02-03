@@ -69,8 +69,12 @@ def upload_file(file_content, mime_type, api_key, base_url, proxy_api_prefix):
         "use_case": determine_file_use_case(mime_type)
     }
 
+    ak = get_access_key(api_key)
+
+    if not ak or ak == '':
+        return jsonify({"error": "Authorization header is missing or invalid"}), 401
     headers = {
-        "Authorization": f"Bearer {api_key}"
+        "Authorization": f"Bearer {ak}"
     }
     upload_response = requests.post(upload_api_url, json=upload_request_payload, headers=headers)
     logger.debug(f"upload_response: {upload_response.text}")
@@ -130,8 +134,12 @@ def get_file_metadata(file_content, mime_type, api_key, base_url, proxy_api_pref
         # 检测之前的文件是否仍然有效
         check_url = f"{base_url}{proxy_api_prefix}/backend-api/files/{file_id}/uploaded"
 
+        ak = get_access_key(api_key)
+
+        if not ak or ak == '':
+            return jsonify({"error": "Authorization header is missing or invalid"}), 401
         headers = {
-            "Authorization": f"Bearer {api_key}"
+            "Authorization": f"Bearer {ak}"
         }
         check_response = requests.post(check_url, json={}, headers=headers)
         logger.debug(f"check_response: {check_response.text}")
