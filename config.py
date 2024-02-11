@@ -69,6 +69,27 @@ PROXY_CONFIG_AUTH = [
     PROXY_CONFIG_PASSWORD
 ]
 
+PROXY_URL = ""
+PROXIES = {}
+
+if PROXY_CONFIG_ENABLED:
+    # 构建requests支持的代理格式
+    if PROXY_CONFIG_PROTOCOL in ['http']:
+        PROXY_URL = f"{PROXY_CONFIG_PROTOCOL}://{PROXY_CONFIG_HOST}:{PROXY_CONFIG_PORT}"
+        PROXIES = {
+            'http': PROXY_URL,
+            'https': PROXY_URL,
+        }
+    elif PROXY_CONFIG_PROTOCOL in ['socks5']:
+        PROXY_URL = f"{PROXY_CONFIG_PROTOCOL}://{PROXY_CONFIG_HOST}:{PROXY_CONFIG_PORT}"
+        PROXIES = {
+            'http': PROXY_URL,
+            'https': PROXY_URL,
+        }
+    else:
+        # 如果没有设置代理
+        PROXIES = {}
+
 
 """
 GPTs配置

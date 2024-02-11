@@ -102,6 +102,21 @@ with app.app_context():
 
     logger.info(f"==========================================")
 
+    if config.PROXY_CONFIG_ENABLED:
+        logger.info("proxy is enabled")
+
+        # 打印当前使用的代理设置
+        logger.info(f"Use Proxy: {config.PROXY_CONFIG_PROTOCOL}://{config.PROXY_CONFIG_HOST}:{config.PROXY_CONFIG_PORT}")
+    else:
+        logger.info("No Proxy")
+
+
+    ip_info = gpt.parse_oai_ip_info()
+    logger.info(f"The ip you are using to access oai is: {ip_info['ip']}")
+    logger.info(f"The location of this ip is: {ip_info['loc']}")
+    logger.info(f"The colo is: {ip_info['colo']}")
+    logger.info(f"Is this ip a Warp ip: {ip_info['warp']}")
+
     # 处理 websocket 连接
     # data_queue = Queue()
     # stop_event = threading.Event()

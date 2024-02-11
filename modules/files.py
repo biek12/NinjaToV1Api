@@ -6,6 +6,7 @@ import requests
 from PIL import Image
 from flask import jsonify
 
+import config
 from auth import get_access_key
 from init import logger, redis_client
 
@@ -88,7 +89,7 @@ def upload_file(file_content, mime_type, api_key, base_url, proxy_api_prefix):
         'Content-Type': mime_type,
         'x-ms-blob-type': 'BlockBlob'  # 添加这个头部
     }
-    put_response = requests.put(upload_url, data=file_content, headers=put_headers)
+    put_response = requests.put(upload_url, data=file_content, headers=put_headers, proxies=config.PROXIES)
     if put_response.status_code != 201:
         logger.debug(f"put_response: {put_response.text}")
         logger.debug(f"put_response status_code: {put_response.status_code}")

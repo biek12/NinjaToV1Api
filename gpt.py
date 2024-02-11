@@ -25,6 +25,47 @@ from modules.utils import is_valid_citation_format, is_complete_citation_format,
 
 BASE_URL = config.BASE_URL
 PROXY_API_PREFIX = config.PROXY_API_PREFIX
+PROXIES = config.PROXIES
+
+
+# 解析响应中的信息
+def parse_oai_ip_info():
+    tmp_ua = ua.random
+    res = requests.get("https://auth0.openai.com/cdn-cgi/trace", headers={"User-Agent":tmp_ua}, proxies=PROXIES)
+    lines = res.text.strip().split("\n")
+    info_dict = {line.split('=')[0]: line.split('=')[1] for line in lines if '=' in line}
+    return {key: info_dict[key] for key in ["ip", "loc", "colo", "warp"] if key in info_dict}
+
+
+# 定义获取 token 的函数
+def get_token():
+    # 从环境变量获取 URL 列表，并去除每个 URL 周围的空白字符
+    api_urls = [url.strip() for url in config.ARKOSE_URLS.split(",")]
+
+    for url in api_urls:
+        if not url:
+            continue
+
+        full_url = f"{url}/api/arkose/token"
+        payload = {'type': 'gpt-4'}
+
+        try:
+            response = requests.post(full_url, data=payload)
+            if response.status_code == 200:
+                token = response.json().get('token')
+                # 确保 token 字段存在且不是 None 或空字符串
+                if token:
+                    logger.debug(f"成功从 {url} 获取 arkose token")
+                    return token
+                else:
+                    logger.error(f"获取的 token 响应无效: {token}")
+            else:
+                logger.error(f"获取 arkose token 失败: {response.status_code}, {response.text}")
+        except requests.RequestException as e:
+            logger.error(f"请求异常: {e}")
+
+    raise Exception("获取 arkose token 失败")
+    return None
 
 
 # 定义发送请求的函数
@@ -77,7 +118,7 @@ def send_text_prompt_and_get_response(messages, api_key, stream, model):
                                 tmp_headers = {
                                     'User-Agent': tmp_user_agent
                                 }
-                                file_response = requests.get(url=file_url, headers=tmp_headers)
+                                file_response = requests.get(url=file_url, headers=tmp_headers, proxies=config.PROXIES)
                                 file_content = file_response.content
                                 mime_type = file_response.headers.get('Content-Type', '').split(';')[0].strip()
                             except Exception as e:
@@ -215,9 +256,11 @@ def send_text_prompt_and_get_response(messages, api_key, stream, model):
             payload['history_and_training_disabled'] = True
         if ori_model_name != 'gpt-3.5-turbo':
             if config.CUSTOM_ARKOSE:
-                pass
-            #     token = get_token()
-            #     payload["arkose_token"] = token
+                token = get_token()
+                payload["arkose_token"] = token
+                # 在headers中添加新字段
+                headers["Openai-Sentinel-Arkose-Token"] = token
+        logger.debug(f"headers: {headers}")
         logger.debug(f"payload: {payload}")
         response = requests.post(url, headers=headers, json=payload, stream=True)
         # print(response)
@@ -365,7 +408,7 @@ def replace_sandbox(text, conversation_id, message_id, api_key):
         if not os.path.exists("./files"):
             os.makedirs("./files")
         file_path = f"./files/{filename}"
-        with requests.get(download_url, stream=True) as r:
+        with requests.get(download_url, stream=True, proxies=config.PROXIES) as r:
             with open(file_path, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
@@ -763,7 +806,7 @@ def process_data_json(data_json, data_queue, stop_event, last_data_time, api_key
                         if response_format == "url":
                             data_queue.put(('image_url', f"{download_url}"))
                         else:
-                            image_download_response = requests.get(download_url)
+                            image_download_response = requests.get(download_url, proxies=config.PROXIES)
                             if image_download_response.status_code == 200:
                                 logger.debug(f"下载图片成功")
                                 image_data = image_download_response.content
@@ -773,7 +816,7 @@ def process_data_json(data_json, data_queue, stop_event, last_data_time, api_key
                     else:
                         # 从URL下载图片
                         # image_data = requests.get(download_url).content
-                        image_download_response = requests.get(download_url)
+                        image_download_response = requests.get(download_url, proxies=config.PROXIES)
                         # print(f"image_download_response: {image_download_response.text}")
                         if image_download_response.status_code == 200:
                             logger.debug(f"下载图片成功")
@@ -1013,7 +1056,7 @@ def process_data_json(data_json, data_queue, stop_event, last_data_time, api_key
                                 else:
                                     # 从URL下载图片
                                     # image_data = requests.get(download_url).content
-                                    image_download_response = requests.get(download_url)
+                                    image_download_response = requests.get(download_url, proxies=config.PROXIES)
                                     # print(f"image_download_response: {image_download_response.text}")
                                     if image_download_response.status_code == 200:
                                         logger.debug(f"下载图片成功")
@@ -1260,10 +1303,14 @@ def register_websocket(api_key):
         "Authorization": f"Bearer {api_key}"
     }
     response = requests.post(url, headers=headers)
-    response_json = response.json()
-    logger.debug(f"register_websocket response: {response_json}")
-    wss_url = response_json.get("wss_url", None)
-    return wss_url
+    try:
+        response_json = response.json()
+        logger.debug(f"register_websocket response: {response_json}")
+        wss_url = response_json.get("wss_url", None)
+        return wss_url
+    except json.JSONDecodeError:
+        raise Exception(f"Wss register fail: {response.text}")
+        return None
 
 
 def old_data_fetcher(upstream_response, data_queue, stop_event, last_data_time, api_key, chat_message_id, model,
